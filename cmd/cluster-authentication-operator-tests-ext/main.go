@@ -13,6 +13,11 @@ import (
 	"github.com/openshift/cluster-authentication-operator/pkg/version"
 
 	_ "github.com/openshift/cluster-authentication-operator/test/e2e"
+	_ "github.com/openshift/cluster-authentication-operator/test/e2e-encryption"
+	_ "github.com/openshift/cluster-authentication-operator/test/e2e-encryption-kms"
+	_ "github.com/openshift/cluster-authentication-operator/test/e2e-encryption-perf"
+	_ "github.com/openshift/cluster-authentication-operator/test/e2e-encryption-rotation"
+	_ "github.com/openshift/cluster-authentication-operator/test/e2e-oidc"
 
 	"k8s.io/klog/v2"
 )
