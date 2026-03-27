@@ -23,6 +23,9 @@ import (
 )
 
 func main() {
+	// Configure klog to write to stderr to prevent warnings from corrupting JSON output on stdout
+	klog.SetOutput(os.Stderr)
+
 	cmd, err := newOperatorTestCommand()
 	if err != nil {
 		klog.Fatal(err)
