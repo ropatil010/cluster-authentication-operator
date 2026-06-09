@@ -13,7 +13,11 @@ import (
 	"github.com/openshift/cluster-authentication-operator/pkg/version"
 
 	_ "github.com/openshift/cluster-authentication-operator/test/e2e"
+	_ "github.com/openshift/cluster-authentication-operator/test/e2e-encryption"
 	_ "github.com/openshift/cluster-authentication-operator/test/e2e-encryption-kms"
+	_ "github.com/openshift/cluster-authentication-operator/test/e2e-encryption-perf"
+	_ "github.com/openshift/cluster-authentication-operator/test/e2e-encryption-rotation"
+	_ "github.com/openshift/cluster-authentication-operator/test/e2e-oidc"
 
 	"k8s.io/klog/v2"
 )
@@ -74,11 +78,12 @@ func prepareOperatorTestsRegistry() (*oteextension.Registry, error) {
 	// The following suite runs tests that must execute serially (one at a time)
 	// because they modify cluster-wide resources like OAuth configuration.
 	// Tests tagged with [Serial] and any of [Operator], [OIDC], [Templates], [Tokens] are included in this suite.
+	// Disruptive tests are excluded as they run in the disruptive suite instead.
 	extension.AddSuite(oteextension.Suite{
 		Name:        "openshift/cluster-authentication-operator/operator/serial",
 		Parallelism: 1,
 		Qualifiers: []string{
-			`name.contains("[Serial]") && (name.contains("[Operator]") || name.contains("[OIDC]") || name.contains("[Templates]") || name.contains("[Tokens]"))`,
+			`name.contains("[Serial]") && !name.contains("[Disruptive]") && (name.contains("[Operator]") || name.contains("[OIDC]") || name.contains("[Templates]") || name.contains("[Tokens]"))`,
 		},
 	})
 
@@ -92,6 +97,36 @@ func prepareOperatorTestsRegistry() (*oteextension.Registry, error) {
 		ClusterStability: oteextension.ClusterStabilityDisruptive,
 	})
 
+	// ClusterStability set to Disruptive: encryption tests trigger API server rollouts.
+	extension.AddSuite(oteextension.Suite{
+		Name:             "openshift/cluster-authentication-operator/operator-encryption/serial",
+		Parallelism:      1,
+		ClusterStability: oteextension.ClusterStabilityDisruptive,
+		Qualifiers: []string{
+			`name.contains("[Encryption]") && name.contains("[Serial]") && !name.contains("Rotation") && !name.contains("Perf") && !name.contains("KMS")`,
+		},
+	})
+
+	// ClusterStability set to Disruptive: encryption rotation triggers API server rollouts.
+	extension.AddSuite(oteextension.Suite{
+		Name:             "openshift/cluster-authentication-operator/operator-encryption-rotation/serial",
+		Parallelism:      1,
+		ClusterStability: oteextension.ClusterStabilityDisruptive,
+		Qualifiers: []string{
+			`name.contains("[Encryption]") && name.contains("[Serial]") && name.contains("Rotation")`,
+		},
+	})
+
+	// ClusterStability set to Disruptive: encryption perf tests trigger API server rollouts.
+	extension.AddSuite(oteextension.Suite{
+		Name:             "openshift/cluster-authentication-operator/operator-encryption-perf/serial",
+		Parallelism:      1,
+		ClusterStability: oteextension.ClusterStabilityDisruptive,
+		Qualifiers: []string{
+			`name.contains("[Encryption]") && name.contains("[Serial]") && name.contains("Perf")`,
+		},
+	})
+
 	// The following suite runs KMS encryption tests.
 	extension.AddSuite(oteextension.Suite{
 		Name:        "openshift/cluster-authentication-operator/encryption-kms",
@@ -99,6 +134,18 @@ func prepareOperatorTestsRegistry() (*oteextension.Registry, error) {
 		Qualifiers: []string{
 			`name.contains("KMSEncryption")`,
 		},
+	})
+
+	// Register external images used by OIDC tests
+	extension.RegisterImage(oteextension.Image{
+		Registry: "quay.io",
+		Name:     "keycloak/keycloak",
+		Version:  "25.0",
+	})
+	extension.RegisterImage(oteextension.Image{
+		Registry: "docker.io",
+		Name:     "gitlab/gitlab-ce",
+		Version:  "13.8.4-ce.0",
 	})
 
 	specs, err := oteginkgo.BuildExtensionTestSpecsFromOpenShiftGinkgoSuite()

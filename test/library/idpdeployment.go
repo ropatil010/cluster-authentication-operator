@@ -11,26 +11,152 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
+	watchtools "k8s.io/client-go/tools/watch"
 	"k8s.io/utils/ptr"
 
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	configv1client "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
 	routev1client "github.com/openshift/client-go/route/clientset/versioned/typed/route/v1"
-	v1 "k8s.io/api/rbac/v1"
-	"k8s.io/client-go/tools/cache"
-	watchtools "k8s.io/client-go/tools/watch"
 )
 
 const servingSecretName = "serving-secret"
 
 func boolptr(b bool) *bool {
 	return &b
+}
+
+// deployPodWithImageStream wraps deployPod to import external images via ImageStream first.
+// This ensures pods pull from the internal registry, which is allowed by the known-image-checker monitor test.
+// The function creates a namespace, imports the image, then deploys the pod using the internal registry reference.
+func deployPodWithImageStream(
+	t testing.TB,
+	kubeconfig *rest.Config,
+	clients *kubernetes.Clientset,
+	routeClient routev1client.RouteV1Interface,
+	name string,
+	registry string,
+	imageName string,
+	imageVersion string,
+	imageStreamName string,
+	env []corev1.EnvVar,
+	httpPort, httpsPort int32,
+	volumes []corev1.Volume,
+	volumeMounts []corev1.VolumeMount,
+	resources corev1.ResourceRequirements,
+	readinessProbe *corev1.Probe,
+	livenessProbe *corev1.Probe,
+	useTLS bool,
+	usePrivilegedSecurity bool,
+	command ...string,
+) (namespace, host string, cleanup func()) {
+	// Construct the original external image reference
+	externalImage := fmt.Sprintf("%s/%s:%s", registry, imageName, imageVersion)
+
+	// Step 1: Deploy the pod (this creates the namespace)
+	namespace, host, podCleanup := deployPod(
+		t, clients, routeClient,
+		name, externalImage, // Use external image initially
+		env, httpPort, httpsPort,
+		volumes, volumeMounts, resources,
+		readinessProbe, livenessProbe,
+		useTLS, usePrivilegedSecurity,
+		command...,
+	)
+
+	// Step 2: Import the image into an ImageStream in the created namespace
+	t.Logf("Importing %s image into ImageStream for known-image-checker compliance", name)
+	internalImage, isCleanup, err := ImportImageToImageStream(
+		t,
+		kubeconfig,
+		namespace,
+		registry,
+		imageName,
+		imageVersion,
+		imageStreamName,
+	)
+	if err != nil {
+		// If ImageStream import fails, clean up the pod deployment and fail
+		podCleanup()
+		t.Fatalf("failed to import %s image to ImageStream: %v", name, err)
+	}
+
+	// Step 3: Update the deployment to use the internal registry image
+	t.Logf("Updating %s deployment to use internal registry image: %s", name, internalImage)
+	deployment, err := clients.AppsV1().Deployments(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	if err != nil {
+		isCleanup()
+		podCleanup()
+		t.Fatalf("failed to get deployment %s: %v", name, err)
+	}
+
+	// Update the image reference to the internal registry
+	deployment.Spec.Template.Spec.Containers[0].Image = internalImage
+	_, err = clients.AppsV1().Deployments(namespace).Update(context.TODO(), deployment, metav1.UpdateOptions{})
+	if err != nil {
+		isCleanup()
+		podCleanup()
+		t.Fatalf("failed to update deployment %s with internal image: %v", name, err)
+	}
+
+	// Wait for the deployment to roll out with the new image
+	t.Logf("Waiting for %s deployment to roll out with internal registry image", name)
+	timeLimitedCtx, cancel := context.WithTimeout(context.TODO(), 10*time.Minute)
+	defer cancel()
+	_, err = watchtools.UntilWithSync(timeLimitedCtx,
+		cache.NewListWatchFromClient(
+			clients.AppsV1().RESTClient(), "deployments", namespace, fields.OneTermEqualSelector("metadata.name", deployment.Name)),
+		&appsv1.Deployment{},
+		nil,
+		func(event watch.Event) (bool, error) {
+			ds := event.Object.(*appsv1.Deployment)
+			// Check if the new generation is observed and replicas are ready
+			return ds.Status.ObservedGeneration >= deployment.Generation && ds.Status.ReadyReplicas > 0, nil
+		},
+	)
+	if err != nil {
+		isCleanup()
+		podCleanup()
+		t.Fatalf("failed waiting for %s deployment rollout: %v", name, err)
+	}
+
+	t.Logf("Successfully deployed %s using internal registry image", name)
+
+	// Return combined cleanup function
+	cleanup = func() {
+		isCleanup()
+		podCleanup()
+	}
+
+	return namespace, host, cleanup
+}
+
+func createContainerSecurityContext(usePrivileged bool) *corev1.SecurityContext {
+	if usePrivileged {
+		return &corev1.SecurityContext{
+			Privileged: boolptr(true),
+		}
+	}
+
+	// Restricted security context compliant with PodSecurity restricted:latest policy
+	return &corev1.SecurityContext{
+		AllowPrivilegeEscalation: boolptr(false),
+		RunAsNonRoot:             boolptr(true),
+		Capabilities: &corev1.Capabilities{
+			Drop: []corev1.Capability{"ALL"},
+		},
+		SeccompProfile: &corev1.SeccompProfile{
+			Type: corev1.SeccompProfileTypeRuntimeDefault,
+		},
+	}
 }
 
 func deployPod(
@@ -46,6 +172,7 @@ func deployPod(
 	readinessProbe *corev1.Probe,
 	livenessProbe *corev1.Probe,
 	useTLS bool,
+	usePrivilegedSecurity bool,
 	command ...string,
 ) (namespace, host string, cleanup func()) {
 	testContext := context.TODO()
@@ -53,10 +180,17 @@ func deployPod(
 	var err error
 	cleanup = func() {}
 
-	namespace = NewTestNamespaceBuilder("e2e-test-authentication-operator-").
-		WithPrivilegedPSaEnforcement().
-		WithLabels(CAOE2ETestLabels()).
-		Create(t, clients.CoreV1().Namespaces())
+	// Configure PSA enforcement: privileged for GitLab (requires root), restricted for Keycloak.
+	nsBuilder := NewTestNamespaceBuilder("e2e-test-authentication-operator-").
+		WithLabels(CAOE2ETestLabels())
+
+	if usePrivilegedSecurity {
+		nsBuilder = nsBuilder.WithPrivilegedPSaEnforcement()
+	} else {
+		nsBuilder = nsBuilder.WithRestrictedPSaEnforcement()
+	}
+
+	namespace = nsBuilder.Create(t, clients.CoreV1().Namespaces())
 
 	cleanup = func() {
 		// remove the NS, it will take away all the resources create here along with it
@@ -82,7 +216,7 @@ func deployPod(
 	)
 
 	saName := name
-	pod := podTemplate(name, image, httpPort, httpsPort, command...)
+	pod := podTemplate(name, image, httpPort, httpsPort, usePrivilegedSecurity, command...)
 	pod.Spec.Volumes = volumes
 	pod.Spec.Containers[0].VolumeMounts = volumeMounts
 	pod.Spec.Containers[0].Env = env
@@ -94,6 +228,29 @@ func deployPod(
 		pod.Spec.Containers[0].LivenessProbe = livenessProbe
 	}
 	pod.Spec.ServiceAccountName = saName
+
+	// Grant privileged SCC when required (e.g., GitLab needs root access).
+	if usePrivilegedSecurity {
+		roleBinding := &rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "privileged-scc-to-default-sa",
+			},
+			RoleRef: rbacv1.RoleRef{
+				APIGroup: "rbac.authorization.k8s.io",
+				Kind:     "ClusterRole",
+				Name:     "system:openshift:scc:privileged",
+			},
+			Subjects: []rbacv1.Subject{
+				{
+					Kind: "ServiceAccount",
+					Name: saName,
+				},
+			},
+		}
+
+		_, err = clients.RbacV1().RoleBindings(namespace).Create(testContext, roleBinding, metav1.CreateOptions{})
+		require.NoError(t, err)
+	}
 
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -109,26 +266,6 @@ func deployPod(
 			},
 		},
 	}
-
-	roleBinding := &v1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "privileged-scc-to-default-sa",
-		},
-		RoleRef: v1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "ClusterRole",
-			Name:     "system:openshift:scc:privileged",
-		},
-		Subjects: []v1.Subject{
-			{
-				Kind: "ServiceAccount",
-				Name: saName,
-			},
-		},
-	}
-
-	_, err = clients.RbacV1().RoleBindings(namespace).Create(testContext, roleBinding, metav1.CreateOptions{})
-	require.NoError(t, err)
 
 	_, err = clients.AppsV1().Deployments(namespace).Create(testContext, deployment, metav1.CreateOptions{})
 	require.NoError(t, err)
@@ -159,8 +296,8 @@ func deployPod(
 	return
 }
 
-func podTemplate(name, image string, httpPort, httpsPort int32, command ...string) *corev1.Pod {
-	return &corev1.Pod{
+func podTemplate(name, image string, httpPort, httpsPort int32, usePrivilegedSecurity bool, command ...string) *corev1.Pod {
+	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 			Labels: map[string]string{
@@ -170,11 +307,9 @@ func podTemplate(name, image string, httpPort, httpsPort int32, command ...strin
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{
 				{
-					Name:  "payload",
-					Image: image,
-					SecurityContext: &corev1.SecurityContext{
-						Privileged: boolptr(true),
-					},
+					Name:            "payload",
+					Image:           image,
+					SecurityContext: createContainerSecurityContext(usePrivilegedSecurity),
 					Ports: []corev1.ContainerPort{
 						{
 							ContainerPort: httpsPort,
@@ -188,6 +323,8 @@ func podTemplate(name, image string, httpPort, httpsPort int32, command ...strin
 			},
 		},
 	}
+
+	return pod
 }
 
 func svcTemplate(httpPort, httpsPort int32) *corev1.Service {
@@ -247,6 +384,7 @@ func routeTemplate(useTLS bool) *routev1.Route {
 	return r
 }
 
+// CleanIDPConfigByName removes the identity provider with the given name from the OAuth cluster configuration.
 func CleanIDPConfigByName(t testing.TB, configClient configv1client.OAuthInterface, idpName string) {
 	config, err := configClient.Get(context.TODO(), "cluster", metav1.GetOptions{})
 	if err != nil {
@@ -279,6 +417,7 @@ func CleanIDPConfigByName(t testing.TB, configClient configv1client.OAuthInterfa
 	}
 }
 
+// IDPCleanupWrapper wraps a cleanup function and skips cleanup if OPENSHIFT_KEEP_IDP environment variable is set.
 func IDPCleanupWrapper(cleanup func()) func() {
 	return func() {
 		// allow keeping the IdP for manual testing
@@ -290,8 +429,7 @@ func IDPCleanupWrapper(cleanup func()) func() {
 	}
 }
 
-// labels for listing/deleting stuff by hand, e.g. NS or simple openshift-config
-// NS CMs and Secrets cleanup
+// CAOE2ETestLabels returns labels used for listing/deleting test resources such as namespaces, ConfigMaps, and Secrets.
 func CAOE2ETestLabels() map[string]string {
 	return map[string]string{
 		"e2e-test": "openshift-authentication-operator",
