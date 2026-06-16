@@ -337,7 +337,6 @@ func (kc *KeycloakClient) AuthenticatePassword(ctx context.Context, clientID, cl
 // Tokens returns the current access token and ID token.
 func (kc *KeycloakClient) Tokens() (accessToken, idToken string) {
 	return kc.accessToken, kc.idToken
-	// CreateClientGroupMapper creates a group membership mapper for the specified client.
 }
 
 // CreateClientGroupMapper creates a group membership mapper for the specified client.
@@ -375,7 +374,6 @@ func (kc *KeycloakClient) CreateClientGroupMapper(ctx context.Context, clientID,
 		return fmt.Errorf("failed creating mapper %q: %s %s", mapperName, resp.Status, respBytes)
 	}
 
-	// CreateGroup creates a new group with the given name.
 	return nil
 }
 
@@ -404,7 +402,7 @@ func (kc *KeycloakClient) CreateGroup(ctx context.Context, groupName string) err
 		respBytes, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("failed creating group %q: %s %s", groupName, resp.Status, respBytes)
 	}
-	// ListGroups returns all groups in the realm.
+
 	return nil
 }
 
@@ -448,7 +446,6 @@ func (kc *KeycloakClient) ListGroups(ctx context.Context) ([]map[string]interfac
 
 		allGroups = append(allGroups, groups...)
 		first += len(groups)
-		// DeleteGroup deletes the group with the given name.
 	}
 
 	return allGroups, nil
@@ -708,7 +705,6 @@ func (kc *KeycloakClient) ListUserGroups(ctx context.Context, id string) ([]map[
 	return userGroups, nil
 }
 
-// DeleteUser deletes the user with the given username.
 // DeleteUserFromGroups removes the user from the specified groups.
 func (kc *KeycloakClient) DeleteUserFromGroups(ctx context.Context, userID string, groupIds ...string) error {
 	userGroupsURL := *kc.keycloakAdminURL
@@ -800,7 +796,6 @@ func (kc *KeycloakClient) GetClient(ctx context.Context, id string) (map[string]
 	}
 	defer resp.Body.Close()
 
-	// GetClientByClientID returns the client with the given client ID.
 	respBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
@@ -832,7 +827,7 @@ func (kc *KeycloakClient) GetClientByClientID(ctx context.Context, clientID stri
 	return nil, fmt.Errorf("client with clientID %q not found", clientID)
 }
 
-// GetClient retrieves a client based on its id (NOTE: id != name)
+// ListClients returns all clients in the realm.
 func (kc *KeycloakClient) ListClients(ctx context.Context) ([]map[string]interface{}, error) {
 	clientsURL := *kc.keycloakAdminURL
 	clientsURL.Path += "/clients"
@@ -841,7 +836,6 @@ func (kc *KeycloakClient) ListClients(ctx context.Context) ([]map[string]interfa
 	if err != nil {
 		return nil, err
 	}
-	// RegenerateClientSecret regenerates and returns the client secret for the client with the given ID.
 	defer resp.Body.Close()
 
 	respBytes, err := io.ReadAll(resp.Body)

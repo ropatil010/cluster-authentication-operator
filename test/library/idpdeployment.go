@@ -36,7 +36,7 @@ func boolptr(b bool) *bool {
 
 // deployPodWithImageStream wraps deployPod to import external images via ImageStream first.
 // This ensures pods pull from the internal registry, which is allowed by the known-image-checker monitor test.
-// The function creates a namespace, imports the image, then deploys the pod using the internal registry reference.
+// The function creates a namespace, imports the image FIRST, then deploys the pod using the internal registry reference.
 func deployPodWithImageStream(
 	t testing.TB,
 	kubeconfig *rest.Config,
@@ -58,21 +58,26 @@ func deployPodWithImageStream(
 	usePrivilegedSecurity bool,
 	command ...string,
 ) (namespace, host string, cleanup func()) {
-	// Construct the original external image reference
-	externalImage := fmt.Sprintf("%s/%s:%s", registry, imageName, imageVersion)
+	// Step 1: Create the namespace FIRST (before importing image or deploying pod)
+	nsBuilder := NewTestNamespaceBuilder("e2e-test-authentication-operator-").
+		WithLabels(CAOE2ETestLabels())
 
-	// Step 1: Deploy the pod (this creates the namespace)
-	namespace, host, podCleanup := deployPod(
-		t, clients, routeClient,
-		name, externalImage, // Use external image initially
-		env, httpPort, httpsPort,
-		volumes, volumeMounts, resources,
-		readinessProbe, livenessProbe,
-		useTLS, usePrivilegedSecurity,
-		command...,
-	)
+	if usePrivilegedSecurity {
+		nsBuilder = nsBuilder.WithPrivilegedPSaEnforcement()
+	} else {
+		nsBuilder = nsBuilder.WithRestrictedPSaEnforcement()
+	}
 
-	// Step 2: Import the image into an ImageStream in the created namespace
+	namespace = nsBuilder.Create(t, clients.CoreV1().Namespaces())
+
+	nsCleanup := func() {
+		// remove the NS, it will take away all the resources created here along with it
+		if err := clients.CoreV1().Namespaces().Delete(context.TODO(), namespace, metav1.DeleteOptions{}); err != nil {
+			t.Logf("failed to remove namespace %q: %v", namespace, err)
+		}
+	}
+
+	// Step 2: Import the image into an ImageStream BEFORE deploying the pod
 	t.Logf("Importing %s image into ImageStream for known-image-checker compliance", name)
 	internalImage, isCleanup, err := ImportImageToImageStream(
 		t,
@@ -84,51 +89,25 @@ func deployPodWithImageStream(
 		imageStreamName,
 	)
 	if err != nil {
-		// If ImageStream import fails, clean up the pod deployment and fail
-		podCleanup()
+		// If ImageStream import fails, clean up the namespace and fail
+		nsCleanup()
 		t.Fatalf("failed to import %s image to ImageStream: %v", name, err)
 	}
 
-	// Step 3: Update the deployment to use the internal registry image
-	t.Logf("Updating %s deployment to use internal registry image: %s", name, internalImage)
-	deployment, err := clients.AppsV1().Deployments(namespace).Get(context.TODO(), name, metav1.GetOptions{})
-	if err != nil {
-		isCleanup()
-		podCleanup()
-		t.Fatalf("failed to get deployment %s: %v", name, err)
-	}
-
-	// Update the image reference to the internal registry
-	deployment.Spec.Template.Spec.Containers[0].Image = internalImage
-	_, err = clients.AppsV1().Deployments(namespace).Update(context.TODO(), deployment, metav1.UpdateOptions{})
-	if err != nil {
-		isCleanup()
-		podCleanup()
-		t.Fatalf("failed to update deployment %s with internal image: %v", name, err)
-	}
-
-	// Wait for the deployment to roll out with the new image
-	t.Logf("Waiting for %s deployment to roll out with internal registry image", name)
-	timeLimitedCtx, cancel := context.WithTimeout(context.TODO(), 10*time.Minute)
-	defer cancel()
-	_, err = watchtools.UntilWithSync(timeLimitedCtx,
-		cache.NewListWatchFromClient(
-			clients.AppsV1().RESTClient(), "deployments", namespace, fields.OneTermEqualSelector("metadata.name", deployment.Name)),
-		&appsv1.Deployment{},
-		nil,
-		func(event watch.Event) (bool, error) {
-			ds := event.Object.(*appsv1.Deployment)
-			// Check if the new generation is observed and replicas are ready
-			return ds.Status.ObservedGeneration >= deployment.Generation && ds.Status.ReadyReplicas > 0, nil
-		},
+	// Step 3: Deploy the pod using the INTERNAL image from the beginning
+	// This ensures the pod never pulls from external registry
+	host, podCleanup := deployPodInNamespace(
+		t, clients, routeClient,
+		namespace,           // Use the namespace we created
+		name, internalImage, // Use internal image from the start!
+		env, httpPort, httpsPort,
+		volumes, volumeMounts, resources,
+		readinessProbe, livenessProbe,
+		useTLS, usePrivilegedSecurity,
+		command...,
 	)
-	if err != nil {
-		isCleanup()
-		podCleanup()
-		t.Fatalf("failed waiting for %s deployment rollout: %v", name, err)
-	}
 
-	t.Logf("Successfully deployed %s using internal registry image", name)
+	t.Logf("Successfully deployed %s using internal registry image: %s", name, internalImage)
 
 	// Return combined cleanup function
 	cleanup = func() {
@@ -159,10 +138,13 @@ func createContainerSecurityContext(usePrivileged bool) *corev1.SecurityContext 
 	}
 }
 
-func deployPod(
+// deployPodInNamespace deploys a pod/deployment/service/route in an existing namespace.
+// This is used by deployPodWithImageStream after the namespace and ImageStream have been created.
+func deployPodInNamespace(
 	t testing.TB,
 	clients *kubernetes.Clientset,
 	routeClient routev1client.RouteV1Interface,
+	namespace string, // Existing namespace to deploy into
 	name, image string,
 	env []corev1.EnvVar,
 	httpPort, httpsPort int32,
@@ -174,37 +156,13 @@ func deployPod(
 	useTLS bool,
 	usePrivilegedSecurity bool,
 	command ...string,
-) (namespace, host string, cleanup func()) {
+) (host string, cleanup func()) {
 	testContext := context.TODO()
 
 	var err error
 	cleanup = func() {}
 
-	// Configure PSA enforcement: privileged for GitLab (requires root), restricted for Keycloak.
-	nsBuilder := NewTestNamespaceBuilder("e2e-test-authentication-operator-").
-		WithLabels(CAOE2ETestLabels())
-
-	if usePrivilegedSecurity {
-		nsBuilder = nsBuilder.WithPrivilegedPSaEnforcement()
-	} else {
-		nsBuilder = nsBuilder.WithRestrictedPSaEnforcement()
-	}
-
-	namespace = nsBuilder.Create(t, clients.CoreV1().Namespaces())
-
-	cleanup = func() {
-		// remove the NS, it will take away all the resources create here along with it
-		if err := clients.CoreV1().Namespaces().Delete(testContext, namespace, metav1.DeleteOptions{}); err != nil {
-			t.Logf("error cleaning up a resource: %v", err)
-		}
-	}
-
-	defer func() {
-		if err != nil {
-			cleanup()
-		}
-	}()
-
+	// Create service account
 	_, err = clients.CoreV1().ServiceAccounts(namespace).Create(
 		testContext,
 		&corev1.ServiceAccount{
@@ -214,6 +172,7 @@ func deployPod(
 		},
 		metav1.CreateOptions{},
 	)
+	require.NoError(t, err)
 
 	saName := name
 	pod := podTemplate(name, image, httpPort, httpsPort, usePrivilegedSecurity, command...)
@@ -293,7 +252,13 @@ func deployPod(
 	host, err = WaitForRouteAdmitted(t, routeClient, route.Name, route.Namespace)
 	require.NoError(t, err)
 
-	return
+	// Cleanup function only cleans up resources within the namespace, not the namespace itself
+	cleanup = func() {
+		// The namespace will be cleaned up by the caller
+		// We don't need to clean up individual resources here since they'll be deleted with the namespace
+	}
+
+	return host, cleanup
 }
 
 func podTemplate(name, image string, httpPort, httpsPort int32, usePrivilegedSecurity bool, command ...string) *corev1.Pod {
