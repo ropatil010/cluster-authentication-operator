@@ -39,7 +39,7 @@ func ImportImageToImageStream(
 	version string,
 	imageStreamName string,
 ) (string, func(), error) {
-	ctx := t.Context()
+	ctx := context.Background()
 
 	imageClient, err := imagev1client.NewForConfig(kubeconfig)
 	if err != nil {
