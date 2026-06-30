@@ -21,6 +21,7 @@ var _ = g.Describe("[sig-auth] cluster-authentication-operator", func() {
 	g.It("TestKMSEncryptionProvidersMigration [OCPFeatureGate:KMSEncryption][Serial][Timeout:120m]", func(ctx context.Context) {
 		testKMSEncryptionProvidersMigration(ctx, g.GinkgoTB())
 	})
+
 })
 
 // testKMSEncryptionOnOff tests KMS encryption on/off cycle.
@@ -58,12 +59,11 @@ func testKMSEncryptionOnOff(ctx context.Context, t testing.TB) {
 
 // testKMSEncryptionProvidersMigration tests migration between KMS and AES encryption providers.
 // This test:
-// 1. Deploys the real Vault KMS plugin
-// 2. Creates a test OAuth access token (TokenOfLife)
-// 3. Randomly picks one AES encryption provider (AESGCM or AESCBC)
-// 4. Shuffles the selected AES provider with KMS to create a randomized migration order
-// 5. Migrates between the providers in the shuffled order
-// 6. Verifies token is correctly encrypted after each migration
+// 1. Creates a test OAuth access token (TokenOfLife)
+// 2. Randomly picks one AES encryption provider (AESGCM or AESCBC)
+// 3. Shuffles the selected AES provider with KMS to create a randomized migration order
+// 4. Migrates between the providers in the shuffled order
+// 5. Verifies token is correctly encrypted after each migration
 func testKMSEncryptionProvidersMigration(ctx context.Context, t testing.TB) {
 	library.TestEncryptionProvidersMigration(ctx, t, library.ProvidersMigrationScenario{
 		BasicScenario: library.BasicScenario{
