@@ -27,14 +27,14 @@ func TestEncryptionRotation(t *testing.T) {
 			EncryptionConfigSecretName:      fmt.Sprintf("encryption-config-openshift-oauth-apiserver"),
 			EncryptionConfigSecretNamespace: "openshift-config-managed",
 			OperatorNamespace:               "openshift-authentication-operator",
-			TargetGRs:                       operatorencryption.DefaultTargetGRs,
-			AssertFunc:                      operatorencryption.AssertTokens,
+			TargetGRs:                       library.AuthTargetGRs,
+			AssertFunc:                      library.AssertTokens,
 		},
 		CreateResourceFunc: func(t testing.TB, _ library.ClientSet, _ string) runtime.Object {
-			return operatorencryption.CreateAndStoreTokenOfLife(ctx, t, operatorencryption.GetClients(t))
+			return library.CreateAndStoreTokenOfLife(ctx, t, library.GetClients(t))
 		},
 		GetRawResourceFunc: func(t testing.TB, clientSet library.ClientSet, _ string) string {
-			return operatorencryption.GetRawTokenOfLife(t, clientSet)
+			return library.GetRawTokenOfLife(t, clientSet)
 		},
 		EncryptionProvider: library.EncryptionProvider{
 			APIServerEncryption: configv1.APIServerEncryption{Type: configv1.EncryptionType("aescbc")},

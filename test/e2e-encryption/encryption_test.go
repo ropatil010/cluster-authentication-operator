@@ -8,7 +8,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 
 	configv1 "github.com/openshift/api/config/v1"
-	operatorencryption "github.com/openshift/cluster-authentication-operator/test/library/encryption"
 	library "github.com/openshift/library-go/test/library/encryption"
 )
 
@@ -19,8 +18,8 @@ func TestEncryptionTypeIdentity(t *testing.T) {
 		EncryptionConfigSecretName:      fmt.Sprintf("encryption-config-openshift-oauth-apiserver"),
 		EncryptionConfigSecretNamespace: "openshift-config-managed",
 		OperatorNamespace:               "openshift-authentication-operator",
-		TargetGRs:                       operatorencryption.DefaultTargetGRs,
-		AssertFunc:                      operatorencryption.AssertTokens,
+		TargetGRs:                       library.AuthTargetGRs,
+		AssertFunc:                      library.AssertTokens,
 	})
 }
 
@@ -31,8 +30,8 @@ func TestEncryptionTypeUnset(t *testing.T) {
 		EncryptionConfigSecretName:      fmt.Sprintf("encryption-config-openshift-oauth-apiserver"),
 		EncryptionConfigSecretNamespace: "openshift-config-managed",
 		OperatorNamespace:               "openshift-authentication-operator",
-		TargetGRs:                       operatorencryption.DefaultTargetGRs,
-		AssertFunc:                      operatorencryption.AssertTokens,
+		TargetGRs:                       library.AuthTargetGRs,
+		AssertFunc:                      library.AssertTokens,
 	})
 }
 
@@ -44,15 +43,15 @@ func TestEncryptionTurnOnAndOff(t *testing.T) {
 			EncryptionConfigSecretName:      fmt.Sprintf("encryption-config-openshift-oauth-apiserver"),
 			EncryptionConfigSecretNamespace: "openshift-config-managed",
 			OperatorNamespace:               "openshift-authentication-operator",
-			TargetGRs:                       operatorencryption.DefaultTargetGRs,
-			AssertFunc:                      operatorencryption.AssertTokens,
+			TargetGRs:                       library.AuthTargetGRs,
+			AssertFunc:                      library.AssertTokens,
 		},
-		CreateResourceFunc: func(t testing.TB, _ library.ClientSet, namespace string) runtime.Object {
-			return operatorencryption.CreateAndStoreTokenOfLife(context.TODO(), t, operatorencryption.GetClients(t))
+		CreateResourceFunc: func(t testing.TB, _ library.ClientSet, _ string) runtime.Object {
+			return library.CreateAndStoreTokenOfLife(context.TODO(), t, library.GetClients(t))
 		},
-		AssertResourceEncryptedFunc:    operatorencryption.AssertTokenOfLifeEncrypted,
-		AssertResourceNotEncryptedFunc: operatorencryption.AssertTokenOfLifeNotEncrypted,
-		ResourceFunc:                   func(t testing.TB, _ string) runtime.Object { return operatorencryption.TokenOfLife(t) },
+		AssertResourceEncryptedFunc:    library.AssertTokenOfLifeEncrypted,
+		AssertResourceNotEncryptedFunc: library.AssertTokenOfLifeNotEncrypted,
+		ResourceFunc:                   library.TokenOfLife,
 		ResourceName:                   "TokenOfLife",
 		EncryptionProvider: library.EncryptionProvider{
 			APIServerEncryption: configv1.APIServerEncryption{Type: configv1.EncryptionType("aescbc")},
