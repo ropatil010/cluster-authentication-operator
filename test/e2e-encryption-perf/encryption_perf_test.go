@@ -35,8 +35,8 @@ func TestPerfEncryptionTypeAESCBC(tt *testing.T) {
 			EncryptionConfigSecretName:      fmt.Sprintf("encryption-config-%s", "openshift-oauth-apiserver"),
 			EncryptionConfigSecretNamespace: "openshift-config-managed",
 			OperatorNamespace:               "openshift-authentication-operator",
-			TargetGRs:                       operatorencryption.DefaultTargetGRs,
-			AssertFunc:                      operatorencryption.AssertTokens,
+			TargetGRs:                       library.AuthTargetGRs,
+			AssertFunc:                      library.AssertTokens,
 		},
 		GetOperatorConditionsFunc: func(t testing.TB) ([]operatorv1.OperatorCondition, error) {
 			apiServerOperator, err := clientSet.OperatorClient.Get(ctx, "cluster", metav1.GetOptions{})

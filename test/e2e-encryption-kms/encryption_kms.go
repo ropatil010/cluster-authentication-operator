@@ -8,7 +8,6 @@ import (
 	g "github.com/onsi/ginkgo/v2"
 	"k8s.io/apimachinery/pkg/runtime"
 
-	operatorencryption "github.com/openshift/cluster-authentication-operator/test/library/encryption"
 	library "github.com/openshift/library-go/test/library/encryption"
 	librarykms "github.com/openshift/library-go/test/library/encryption/kms"
 )
@@ -43,15 +42,15 @@ func testKMSEncryptionOnOff(ctx context.Context, t testing.TB) {
 			EncryptionConfigSecretName:      "encryption-config-openshift-oauth-apiserver",
 			EncryptionConfigSecretNamespace: "openshift-config-managed",
 			OperatorNamespace:               "openshift-authentication-operator",
-			TargetGRs:                       operatorencryption.DefaultTargetGRs,
-			AssertFunc:                      operatorencryption.AssertTokens,
+			TargetGRs:                       library.AuthTargetGRs,
+			AssertFunc:                      library.AssertTokens,
 		},
 		CreateResourceFunc: func(t testing.TB, _ library.ClientSet, namespace string) runtime.Object {
-			return operatorencryption.CreateAndStoreTokenOfLife(context.TODO(), t, operatorencryption.GetClients(t))
+			return library.CreateAndStoreTokenOfLife(context.TODO(), t, library.GetClients(t))
 		},
-		AssertResourceEncryptedFunc:    operatorencryption.AssertTokenOfLifeEncrypted,
-		AssertResourceNotEncryptedFunc: operatorencryption.AssertTokenOfLifeNotEncrypted,
-		ResourceFunc:                   func(t testing.TB, _ string) runtime.Object { return operatorencryption.TokenOfLife(t) },
+		AssertResourceEncryptedFunc:    library.AssertTokenOfLifeEncrypted,
+		AssertResourceNotEncryptedFunc: library.AssertTokenOfLifeNotEncrypted,
+		ResourceFunc:                   library.TokenOfLife,
 		ResourceName:                   "TokenOfLife",
 		EncryptionProvider:             librarykms.DefaultVaultEncryptionProvider(ctx, t),
 	})
@@ -72,15 +71,15 @@ func testKMSEncryptionProvidersMigration(ctx context.Context, t testing.TB) {
 			EncryptionConfigSecretName:      "encryption-config-openshift-oauth-apiserver",
 			EncryptionConfigSecretNamespace: "openshift-config-managed",
 			OperatorNamespace:               "openshift-authentication-operator",
-			TargetGRs:                       operatorencryption.DefaultTargetGRs,
-			AssertFunc:                      operatorencryption.AssertTokens,
+			TargetGRs:                       library.AuthTargetGRs,
+			AssertFunc:                      library.AssertTokens,
 		},
 		CreateResourceFunc: func(t testing.TB, _ library.ClientSet, namespace string) runtime.Object {
-			return operatorencryption.CreateAndStoreTokenOfLife(context.TODO(), t, operatorencryption.GetClients(t))
+			return library.CreateAndStoreTokenOfLife(context.TODO(), t, library.GetClients(t))
 		},
-		AssertResourceEncryptedFunc:    operatorencryption.AssertTokenOfLifeEncrypted,
-		AssertResourceNotEncryptedFunc: operatorencryption.AssertTokenOfLifeNotEncrypted,
-		ResourceFunc:                   func(t testing.TB, _ string) runtime.Object { return operatorencryption.TokenOfLife(t) },
+		AssertResourceEncryptedFunc:    library.AssertTokenOfLifeEncrypted,
+		AssertResourceNotEncryptedFunc: library.AssertTokenOfLifeNotEncrypted,
+		ResourceFunc:                   library.TokenOfLife,
 		ResourceName:                   "TokenOfLife",
 		EncryptionProviders: library.ShuffleEncryptionProviders([]library.EncryptionProvider{
 			librarykms.DefaultVaultEncryptionProvider(ctx, t),

@@ -14,13 +14,12 @@ require (
 	github.com/openshift/api v0.0.0-20260623101811-c5eb460d04e3
 	github.com/openshift/build-machinery-go v0.0.0-20251023084048-5d77c1a5e5af
 	github.com/openshift/client-go v0.0.0-20260622130833-df412d4d283e
-	github.com/openshift/library-go v0.0.0-20260629134817-a64e9a6e21ca
+	github.com/openshift/library-go v0.0.0-20260630105459-257053230f0b
 	github.com/openshift/multi-operator-manager v0.0.0-20241205181422-20aa3906b99d
 	github.com/openshift/oauth-apiserver v0.0.0-20260520145010-97a820bd5412
 	github.com/spf13/cobra v1.10.0
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1
-	go.etcd.io/etcd/client/v3 v3.6.5
 	golang.org/x/net v0.55.1-0.20260602153038-42abb857022c
 	google.golang.org/genproto/googleapis/api v0.0.0-20250303144028-a0af3efb3deb
 	gopkg.in/yaml.v2 v2.4.0
@@ -102,6 +101,7 @@ require (
 	github.com/x448/float16 v0.8.4 // indirect
 	go.etcd.io/etcd/api/v3 v3.6.5 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.6.5 // indirect
+	go.etcd.io/etcd/client/v3 v3.6.5 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.60.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.61.0 // indirect
