@@ -14,6 +14,7 @@ import (
 
 	_ "github.com/openshift/cluster-authentication-operator/test/e2e"
 	_ "github.com/openshift/cluster-authentication-operator/test/e2e-encryption-kms"
+	_ "github.com/openshift/cluster-authentication-operator/test/e2e-encryption-perf"
 
 	"k8s.io/klog/v2"
 )
@@ -92,21 +93,22 @@ func prepareOperatorTestsRegistry() (*oteextension.Registry, error) {
 		ClusterStability: oteextension.ClusterStabilityDisruptive,
 	})
 
+	// ClusterStability set to Disruptive: encryption perf tests trigger API server rollouts.
+	extension.AddSuite(oteextension.Suite{
+		Name:             "openshift/cluster-authentication-operator/operator-encryption-perf/serial",
+		Parallelism:      1,
+		ClusterStability: oteextension.ClusterStabilityDisruptive,
+		Qualifiers: []string{
+			`name.contains("[Encryption]") && name.contains("[Serial]") && name.contains("Perf")`,
+		},
+	})
+
 	// The following suite runs KMS encryption tests.
 	extension.AddSuite(oteextension.Suite{
 		Name:        "openshift/cluster-authentication-operator/encryption-kms",
 		Parallelism: 1,
 		Qualifiers: []string{
-			`name.contains("KMSEncryption") && !name.contains("[Suite:encryption-kms-2]")`,
-		},
-	})
-
-	extension.AddSuite(oteextension.Suite{
-		Name:        "openshift/cluster-authentication-operator/encryption-kms-2",
-		Parents:     []string{"openshift/kms"},
-		Parallelism: 1,
-		Qualifiers: []string{
-			`name.contains("[Suite:encryption-kms-2]")`,
+			`name.contains("KMSEncryption")`,
 		},
 	})
 
