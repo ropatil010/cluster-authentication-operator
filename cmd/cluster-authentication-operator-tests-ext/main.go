@@ -15,6 +15,7 @@ import (
 	_ "github.com/openshift/cluster-authentication-operator/test/e2e"
 	_ "github.com/openshift/cluster-authentication-operator/test/e2e-encryption-kms"
 	_ "github.com/openshift/cluster-authentication-operator/test/e2e-encryption-perf"
+	_ "github.com/openshift/cluster-authentication-operator/test/e2e-encryption-rotation"
 
 	"k8s.io/klog/v2"
 )
@@ -109,6 +110,16 @@ func prepareOperatorTestsRegistry() (*oteextension.Registry, error) {
 		Parallelism: 1,
 		Qualifiers: []string{
 			`name.contains("KMSEncryption")`,
+		},
+	})
+
+	// ClusterStability set to Disruptive: encryption rotation triggers API server rollouts.
+	extension.AddSuite(oteextension.Suite{
+		Name:             "openshift/cluster-authentication-operator/operator-encryption-rotation/serial",
+		Parallelism:      1,
+		ClusterStability: oteextension.ClusterStabilityDisruptive,
+		Qualifiers: []string{
+			`name.contains("[Encryption]") && name.contains("[Serial]") && name.contains("Rotation")`,
 		},
 	})
 
