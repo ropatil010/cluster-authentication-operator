@@ -1,60 +1,23 @@
-package e2eencryption
+package e2e_encryption
 
 import (
-	"context"
-	"fmt"
 	"testing"
-
-	"k8s.io/apimachinery/pkg/runtime"
-
-	configv1 "github.com/openshift/api/config/v1"
-	library "github.com/openshift/library-go/test/library/encryption"
 )
 
+// These tests call the shared test functions which
+// can be called from both standard Go tests and Ginkgo tests.
+//
+// This situation is temporary until we verify the new e2e-aws-operator-encryption-serial-ote job.
+// Eventually all tests will be run only as part of the OTE framework.
+
 func TestEncryptionTypeIdentity(t *testing.T) {
-	library.TestEncryptionTypeIdentity(t.Context(), t, library.BasicScenario{
-		Namespace:                       "openshift-config-managed",
-		LabelSelector:                   "encryption.apiserver.operator.openshift.io/component" + "=" + "openshift-oauth-apiserver",
-		EncryptionConfigSecretName:      fmt.Sprintf("encryption-config-openshift-oauth-apiserver"),
-		EncryptionConfigSecretNamespace: "openshift-config-managed",
-		OperatorNamespace:               "openshift-authentication-operator",
-		TargetGRs:                       library.AuthTargetGRs,
-		AssertFunc:                      library.AssertTokens,
-	})
+	testEncryptionTypeIdentity(t.Context(), t)
 }
 
 func TestEncryptionTypeUnset(t *testing.T) {
-	library.TestEncryptionTypeUnset(t.Context(), t, library.BasicScenario{
-		Namespace:                       "openshift-config-managed",
-		LabelSelector:                   "encryption.apiserver.operator.openshift.io/component" + "=" + "openshift-oauth-apiserver",
-		EncryptionConfigSecretName:      fmt.Sprintf("encryption-config-openshift-oauth-apiserver"),
-		EncryptionConfigSecretNamespace: "openshift-config-managed",
-		OperatorNamespace:               "openshift-authentication-operator",
-		TargetGRs:                       library.AuthTargetGRs,
-		AssertFunc:                      library.AssertTokens,
-	})
+	testEncryptionTypeUnset(t.Context(), t)
 }
 
 func TestEncryptionTurnOnAndOff(t *testing.T) {
-	library.TestEncryptionTurnOnAndOff(t.Context(), t, library.OnOffScenario{
-		BasicScenario: library.BasicScenario{
-			Namespace:                       "openshift-config-managed",
-			LabelSelector:                   "encryption.apiserver.operator.openshift.io/component" + "=" + "openshift-oauth-apiserver",
-			EncryptionConfigSecretName:      fmt.Sprintf("encryption-config-openshift-oauth-apiserver"),
-			EncryptionConfigSecretNamespace: "openshift-config-managed",
-			OperatorNamespace:               "openshift-authentication-operator",
-			TargetGRs:                       library.AuthTargetGRs,
-			AssertFunc:                      library.AssertTokens,
-		},
-		CreateResourceFunc: func(t testing.TB, _ library.ClientSet, _ string) runtime.Object {
-			return library.CreateAndStoreTokenOfLife(context.TODO(), t, library.GetClients(t))
-		},
-		AssertResourceEncryptedFunc:    library.AssertTokenOfLifeEncrypted,
-		AssertResourceNotEncryptedFunc: library.AssertTokenOfLifeNotEncrypted,
-		ResourceFunc:                   library.TokenOfLife,
-		ResourceName:                   "TokenOfLife",
-		EncryptionProvider: library.EncryptionProvider{
-			APIServerEncryption: configv1.APIServerEncryption{Type: configv1.EncryptionType("aescbc")},
-		},
-	})
+	testEncryptionTurnOnAndOff(t.Context(), t)
 }
