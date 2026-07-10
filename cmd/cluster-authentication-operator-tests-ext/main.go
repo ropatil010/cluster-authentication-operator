@@ -65,26 +65,13 @@ func prepareOperatorTestsRegistry() (*oteextension.Registry, error) {
 	extension := oteextension.NewExtension("openshift", "payload", "cluster-authentication-operator")
 
 	// The following suite runs tests that verify the operator's behaviour in parallel.
-	// Includes: [Operator][Certs], [Operator][Routes], [Templates], [Tokens] tests
+	// Includes: [Certs], [Routes], [Templates], [Tokens] tests
 	// These tests can run concurrently without conflicts.
 	extension.AddSuite(oteextension.Suite{
 		Name:        "openshift/cluster-authentication-operator/operator/parallel",
 		Parallelism: 4,
 		Qualifiers: []string{
-			`name.contains("[Operator]") || name.contains("[Templates]") || name.contains("[Tokens]")`,
-		},
-	})
-
-	// The following suite runs IntegratedOAuth IDP tests (Keycloak/GitLab) serially.
-	// These tests modify cluster-wide OAuth configuration and must run one at a time.
-	// Excludes [Encryption], [OIDC], and [Disruptive] tests which have dedicated suites.
-	// ClusterStability set to Disruptive: IDP tests temporarily put operator in Degraded state during cleanup.
-	extension.AddSuite(oteextension.Suite{
-		Name:             "openshift/cluster-authentication-operator/operator/serial",
-		Parallelism:      1,
-		ClusterStability: oteextension.ClusterStabilityDisruptive,
-		Qualifiers: []string{
-			`!name.contains("[Disruptive]") && !name.contains("[Encryption]") && !name.contains("[OIDC]") && name.contains("[Serial]")`,
+			`name.contains("[Parallel]") && !name.contains("[Disruptive]") && !name.contains("[ExternalOIDC]") && !name.contains("KMS")`,
 		},
 	})
 
@@ -98,34 +85,25 @@ func prepareOperatorTestsRegistry() (*oteextension.Registry, error) {
 		ClusterStability: oteextension.ClusterStabilityDisruptive,
 	})
 
-	// ClusterStability set to Disruptive: encryption tests trigger API server rollouts.
+	// The following suite runs all serial tests (encryption + OAuth/IDP) in one suite.
+	// ClusterStability set to Disruptive: encryption tests trigger API server rollouts and IDP tests put operator in Degraded state during cleanup.
 	extension.AddSuite(oteextension.Suite{
 		Name:             "openshift/cluster-authentication-operator/operator-encryption/serial",
 		Parallelism:      1,
 		ClusterStability: oteextension.ClusterStabilityDisruptive,
 		Qualifiers: []string{
-			`name.contains("[Encryption]") && name.contains("[Serial]") && !name.contains("Rotation") && !name.contains("Perf") && !name.contains("KMS")`,
+			`name.contains("[Serial]") && !name.contains("[Disruptive]") && !name.contains("[ExternalOIDC]") && !name.contains("KMS")`,
 		},
 	})
 
 	// The following suite runs external OIDC tests that authenticate directly via external OIDC
 	// (bypassing OpenShift's IntegratedOAuth). These are long-running tests in their own suite.
 	extension.AddSuite(oteextension.Suite{
-		Name:             "openshift/cluster-authentication-operator/operator-oidc/serial",
+		Name:             "openshift/cluster-authentication-operator/operator-external-oidc/serial",
 		Parallelism:      1,
 		ClusterStability: oteextension.ClusterStabilityDisruptive,
 		Qualifiers: []string{
-			`name.contains("[OIDC]")`,
-		},
-	})
-
-	// ClusterStability set to Disruptive: encryption perf tests trigger API server rollouts.
-	extension.AddSuite(oteextension.Suite{
-		Name:             "openshift/cluster-authentication-operator/operator-encryption-perf/serial",
-		Parallelism:      1,
-		ClusterStability: oteextension.ClusterStabilityDisruptive,
-		Qualifiers: []string{
-			`name.contains("[Encryption]") && name.contains("[Serial]") && name.contains("Perf")`,
+			`name.contains("[ExternalOIDC]")`,
 		},
 	})
 
@@ -135,16 +113,6 @@ func prepareOperatorTestsRegistry() (*oteextension.Registry, error) {
 		Parallelism: 1,
 		Qualifiers: []string{
 			`name.contains("KMSEncryption")`,
-		},
-	})
-
-	// ClusterStability set to Disruptive: encryption rotation triggers API server rollouts.
-	extension.AddSuite(oteextension.Suite{
-		Name:             "openshift/cluster-authentication-operator/operator-encryption-rotation/serial",
-		Parallelism:      1,
-		ClusterStability: oteextension.ClusterStabilityDisruptive,
-		Qualifiers: []string{
-			`name.contains("[Encryption]") && name.contains("[Serial]") && name.contains("Rotation")`,
 		},
 	})
 

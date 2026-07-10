@@ -51,7 +51,7 @@ import (
 )
 
 var _ = g.Describe("[sig-auth] authentication operator", func() {
-	g.It("[OIDC] TestExternalOIDCWithKeycloak [Timeout:3h]", func(ctx context.Context) {
+	g.It("[ExternalOIDC] TestExternalOIDCWithKeycloak [Timeout:3h]", func(ctx context.Context) {
 		testExternalOIDCWithKeycloak(ctx, g.GinkgoTB())
 	})
 })
