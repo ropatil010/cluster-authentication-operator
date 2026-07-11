@@ -88,7 +88,7 @@ func prepareOperatorTestsRegistry() (*oteextension.Registry, error) {
 	// The following suite runs all serial tests (encryption + OAuth/IDP) in one suite.
 	// ClusterStability set to Disruptive: encryption tests trigger API server rollouts and IDP tests put operator in Degraded state during cleanup.
 	extension.AddSuite(oteextension.Suite{
-		Name:             "openshift/cluster-authentication-operator/operator-encryption/serial",
+		Name:             "openshift/cluster-authentication-operator/operator/serial",
 		Parallelism:      1,
 		ClusterStability: oteextension.ClusterStabilityDisruptive,
 		Qualifiers: []string{
